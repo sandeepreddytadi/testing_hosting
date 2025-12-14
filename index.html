@@ -555,20 +555,37 @@
         }
 
         async function createSession() {
-            await initAuth();
-            const name = prompt('Session Name:') || 'My Session';
-            const id = Math.random().toString(36).substr(2, 6).toUpperCase();
-            
-            app.mode = 'host';
-            app.sessionId = id;
-            app.sessionName = name;
-            app.words = [];
-            
-            await syncData(); // Initial save
-            notify(`✨ Created: ${id}`);
-            
-            startRealtimeListener();
-            render();
+            try {
+                notify("⏳ Initializing...");
+                await initAuth();
+                
+                const name = prompt('Session Name:') || 'My Session';
+                const id = Math.random().toString(36).substr(2, 6).toUpperCase();
+                
+                app.mode = 'host';
+                app.sessionId = id;
+                app.sessionName = name;
+                app.words = [];
+                
+                // Optimistic render
+                render();
+                
+                notify("⏳ Saving to cloud...");
+                await syncData(); // Initial save
+                
+                notify(`✨ Created: ${id}`);
+                startRealtimeListener();
+                // Render again to ensure state is consistent
+                render();
+            } catch (e) {
+                console.error("Session Creation Failed", e);
+                notify(`❌ Error: ${e.message || e}`);
+                // Restore mode if failed
+                if (app.mode === 'host') {
+                    app.mode = 'select';
+                    render();
+                }
+            }
         }
 
         async function joinSession(id) {
