@@ -355,10 +355,10 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-        import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-        // Note: Imported initializeFirestore to allow settings configuration
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot, initializeFirestore } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        // Switching to version 10.8.0 for stability
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+        import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
         // --- Custom Firebase Configuration ---
         const firebaseConfig = {
@@ -371,16 +371,15 @@
             measurementId: "G-QH7BVZ2J8Q"
         };
         
-        // Use projectId for the data path to ensure uniqueness
         const appId = firebaseConfig.projectId;
-        console.log("Using Custom Config. App ID:", appId);
+        console.log("Using Config. App ID:", appId);
 
         const firebaseApp = initializeApp(firebaseConfig);
         const auth = getAuth(firebaseApp);
         
-        // FIX: Force Long Polling to bypass "Client Offline" errors in restrictive networks
+        // Config with Persistence to handle flaky connections
         const db = initializeFirestore(firebaseApp, {
-            experimentalForceLongPolling: true
+            localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
         });
 
         // --- Robust Auth System ---
@@ -463,7 +462,10 @@
                             callback(docSnap.data());
                         }
                     }, (error) => {
-                         console.error("Listener Error (Check Firestore Rules):", error);
+                         console.error("Listener Error:", error);
+                         if (error.code === 'permission-denied') {
+                             notify('⚠️ DB Permission Denied: Check Firestore Rules');
+                         }
                     });
                 } catch(e) {
                     console.error("Listen error", e);
@@ -475,10 +477,15 @@
                 await initAuth();
                 try {
                     const docRef = doc(db, 'artifacts', appId, 'public', 'data', COLLECTION_NAME, sessionId);
-                    const snap = await getDoc(docRef);
+                    const snap = await getDoc(docRef); // This might fail if offline
                     if (snap.exists()) return snap.data();
                 } catch (e) {
                     console.error('Storage Read Error:', e);
+                    // Use catch block to handle offline gracefully
+                    if (e.code === 'unavailable' || e.message.includes("offline")) {
+                        throw new Error("You are offline. Please check connection.");
+                    }
+                    throw e; 
                 }
                 return null;
             },
@@ -486,11 +493,10 @@
             // Save Data
             async save(sessionId, data) {
                 const user = await initAuth();
-                if (!user) return;
+                if (!user) throw new Error("Not authenticated");
 
                 try {
                     const docRef = doc(db, 'artifacts', appId, 'public', 'data', COLLECTION_NAME, sessionId);
-                    // Store plain JSON data
                     await setDoc(docRef, {
                         ...data,
                         updatedAt: Date.now(),
@@ -498,6 +504,15 @@
                     }, { merge: true });
                 } catch (e) {
                     console.error('Storage Write Error:', e);
+                    if (e.code === 'unavailable') {
+                        // Offline persistence will eventually sync, so we don't throw hard error
+                        console.log("Write queued offline");
+                        return;
+                    }
+                    if (e.code === 'permission-denied') {
+                        throw new Error("Database Permission Denied. Check Firestore Rules in Console.");
+                    }
+                    throw e; 
                 }
             }
         };
@@ -523,7 +538,7 @@
             n.className = 'notification';
             n.textContent = msg;
             document.body.appendChild(n);
-            setTimeout(() => n.remove(), 3000);
+            setTimeout(() => n.remove(), 5000); 
         }
 
         function speak(text) {
@@ -537,7 +552,6 @@
 
         // --- Core Logic ---
 
-        // Sync local state to Firebase
         async function syncData() {
             if (!app.sessionId) return;
             
@@ -550,7 +564,6 @@
             await storage.save(app.sessionId, dataToSave);
         }
 
-        // Receive data from Firebase
         function onDataUpdate(data) {
             if (!data) return;
             if (data.words) app.words = data.words;
@@ -560,20 +573,38 @@
         }
 
         async function createSession() {
-            await initAuth();
-            const name = prompt('Session Name:') || 'My Session';
-            const id = Math.random().toString(36).substr(2, 6).toUpperCase();
-            
-            app.mode = 'host';
-            app.sessionId = id;
-            app.sessionName = name;
-            app.words = [];
-            
-            await syncData(); // Initial save
-            notify(`✨ Created: ${id}`);
-            
-            startRealtimeListener();
-            render();
+            try {
+                notify("⏳ Initializing...");
+                await initAuth();
+                
+                const name = prompt('Session Name:') || 'My Session';
+                const id = Math.random().toString(36).substr(2, 6).toUpperCase();
+                
+                app.mode = 'host';
+                app.sessionId = id;
+                app.sessionName = name;
+                app.words = [];
+                render();
+                
+                notify("⏳ Saving to cloud...");
+                await syncData(); 
+                
+                notify(`✨ Created: ${id}`);
+                startRealtimeListener();
+            } catch (e) {
+                console.error("Session Creation Failed", e);
+                if (e.message.includes("Permission")) {
+                    alert("DATABASE ERROR: " + e.message + "\n\nGo to Firebase Console -> Firestore Database -> Rules, and ensure they allow read/write.");
+                } else if (e.message.includes("authenticated")) {
+                    alert("AUTH ERROR: Not authenticated. Please reload.");
+                } else {
+                    notify(`❌ Error: ${e.message || e}`);
+                }
+                
+                app.mode = 'select';
+                app.sessionId = '';
+                render();
+            }
         }
 
         async function joinSession(id) {
@@ -581,18 +612,29 @@
             const clean = id.trim().toUpperCase();
             if (!clean) { notify('❌ Invalid ID'); return; }
             
-            app.sessionId = clean;
+            notify("⏳ Connecting...");
             
-            // Check if exists
-            const data = await storage.get(clean);
-            
-            if (data) {
-                onDataUpdate(data);
-                app.mode = 'audience';
-                notify('✨ Connected');
+            try {
+                // For joining, we rely on the listener directly if get() fails
+                // due to offline status, but we try get() first for speed.
+                const data = await storage.get(clean);
+                
+                if (data) {
+                    app.sessionId = clean;
+                    onDataUpdate(data);
+                    app.mode = 'audience';
+                    notify('✨ Connected');
+                    startRealtimeListener();
+                } else {
+                    notify('❌ Session Not Found (Check Code)');
+                }
+            } catch (e) {
+                // If get fails (e.g. offline), try listening anyway
+                console.warn("Join Error, attempting fallback listener", e);
+                app.sessionId = clean;
                 startRealtimeListener();
-            } else {
-                notify('❌ Session Not Found');
+                app.mode = 'audience'; // Assume success optimistically
+                notify(`⚠️ Offline Mode: Waiting for sync...`);
             }
             render();
         }
@@ -619,10 +661,17 @@
                 timestamp: Date.now(), 
                 id: Math.random().toString(36).substr(2, 9) 
             });
-            await syncData();
-            app.isSubmitted = true;
-            notify('✨ Sent');
-            render();
+            
+            try {
+                await syncData();
+                app.isSubmitted = true;
+                notify('✨ Sent');
+                render();
+            } catch (e) {
+                notify("⚠️ Saved locally (Offline)");
+                app.isSubmitted = true; // Still show success UI
+                render();
+            }
         }
 
         // --- Features ---
@@ -645,7 +694,7 @@
                 });
                 const data = await response.json();
                 app.summary = data.candidates[0].content.parts[0].text;
-                await syncData(); // Save summary to cloud
+                await syncData();
                 speak(app.summary);
             } catch (e) {
                 console.error(e);
