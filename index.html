@@ -398,7 +398,28 @@
                     renderDebug();
                     resolve(auth.currentUser);
                 } catch (e) {
-                    console.error("Auth Error (Check if Anonymous Auth is enabled in Firebase Console):", e);
+                    console.error("Auth Error:", e);
+                    
+                    // Show helpful UI if config is missing in console
+                    if (e.code === 'auth/configuration-not-found' || e.code === 'auth/operation-not-allowed') {
+                        document.getElementById('app').innerHTML = `
+                            <div class="screen" style="flex-direction:column; text-align:center; padding:20px;">
+                                <h1 style="color:#ff4444; font-size:40px; margin-bottom: 20px;">⚠️ Configuration Error</h1>
+                                <p style="font-size:18px; margin-bottom:30px;">Firebase Authentication is not enabled.</p>
+                                <div style="background:rgba(255,255,255,0.1); padding:30px; border-radius:12px; text-align:left; max-width: 500px;">
+                                    <strong style="font-size: 20px; color: #00d9ff; display: block; margin-bottom: 15px;">How to fix:</strong>
+                                    <ol style="margin-left:20px; line-height:1.8; font-size: 16px;">
+                                        <li>Go to <a href="https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication" target="_blank" style="color:#00d9ff; font-weight: bold; text-decoration: none;">Firebase Console</a></li>
+                                        <li>Click <strong>Authentication</strong> > <strong>Get Started</strong></li>
+                                        <li>Click <strong>Sign-in method</strong> tab</li>
+                                        <li>Enable <strong>Anonymous</strong> provider</li>
+                                        <li>Save changes and refresh this page</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
                     reject(e);
                     authPromise = null;
                 }
