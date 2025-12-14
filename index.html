@@ -382,6 +382,24 @@
             localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
         });
 
+        // --- Helper: Show Configuration Error Screen ---
+        function showConfigError(title, message, steps) {
+            const stepsHtml = steps.map(step => `<li>${step}</li>`).join('');
+            document.getElementById('app').innerHTML = `
+                <div class="screen" style="flex-direction:column; text-align:center; padding:20px;">
+                    <h1 style="color:#ff4444; font-size:40px; margin-bottom: 20px;">⚠️ ${title}</h1>
+                    <p style="font-size:18px; margin-bottom:30px;">${message}</p>
+                    <div style="background:rgba(255,255,255,0.1); padding:30px; border-radius:12px; text-align:left; max-width: 600px;">
+                        <strong style="font-size: 20px; color: #00d9ff; display: block; margin-bottom: 15px;">How to fix:</strong>
+                        <ol style="margin-left:20px; line-height:1.8; font-size: 16px;">
+                            ${stepsHtml}
+                        </ol>
+                    </div>
+                    <button class="btn btn-secondary" onclick="location.reload()" style="margin-top:20px">Refresh Page</button>
+                </div>
+            `;
+        }
+
         // --- Robust Auth System ---
         let authPromise = null;
         let currentUserUid = 'unknown';
@@ -404,24 +422,13 @@
                 } catch (e) {
                     console.error("Auth Error:", e);
                     
-                    // Show helpful UI if config is missing in console
                     if (e.code === 'auth/configuration-not-found' || e.code === 'auth/operation-not-allowed') {
-                        document.getElementById('app').innerHTML = `
-                            <div class="screen" style="flex-direction:column; text-align:center; padding:20px;">
-                                <h1 style="color:#ff4444; font-size:40px; margin-bottom: 20px;">⚠️ Configuration Error</h1>
-                                <p style="font-size:18px; margin-bottom:30px;">Firebase Authentication is not enabled.</p>
-                                <div style="background:rgba(255,255,255,0.1); padding:30px; border-radius:12px; text-align:left; max-width: 500px;">
-                                    <strong style="font-size: 20px; color: #00d9ff; display: block; margin-bottom: 15px;">How to fix:</strong>
-                                    <ol style="margin-left:20px; line-height:1.8; font-size: 16px;">
-                                        <li>Go to <a href="https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication" target="_blank" style="color:#00d9ff; font-weight: bold; text-decoration: none;">Firebase Console</a></li>
-                                        <li>Click <strong>Authentication</strong> > <strong>Get Started</strong></li>
-                                        <li>Click <strong>Sign-in method</strong> tab</li>
-                                        <li>Enable <strong>Anonymous</strong> provider</li>
-                                        <li>Save changes and refresh this page</li>
-                                    </ol>
-                                </div>
-                            </div>
-                        `;
+                        showConfigError("Auth Configuration Error", "Firebase Authentication is not enabled.", [
+                            `Go to <a href="https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication" target="_blank" style="color:#00d9ff">Firebase Console > Authentication</a>`,
+                            "Click <strong>Get Started</strong>",
+                            "Go to <strong>Sign-in method</strong> tab",
+                            "Enable <strong>Anonymous</strong> provider"
+                        ]);
                     }
                     
                     reject(e);
@@ -466,6 +473,15 @@
                          if (error.code === 'permission-denied') {
                              notify('⚠️ DB Permission Denied: Check Firestore Rules');
                          }
+                         if (error.message.includes("database (default) does not exist") || error.code === 'not-found') {
+                             showConfigError("Database Not Found", "The Firestore Database has not been created yet.", [
+                                 `Go to <a href="https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore" target="_blank" style="color:#00d9ff">Firebase Console > Firestore Database</a>`,
+                                 "Click <strong>Create Database</strong>",
+                                 "Choose a location (e.g. nam5)",
+                                 "Select <strong>Start in Test Mode</strong> (for easy setup)",
+                                 "Click <strong>Create</strong>"
+                             ]);
+                         }
                     });
                 } catch(e) {
                     console.error("Listen error", e);
@@ -481,6 +497,18 @@
                     if (snap.exists()) return snap.data();
                 } catch (e) {
                     console.error('Storage Read Error:', e);
+                    
+                    if (e.message.includes("database (default) does not exist") || e.code === 'not-found') {
+                         showConfigError("Database Not Found", "The Firestore Database has not been created yet.", [
+                             `Go to <a href="https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore" target="_blank" style="color:#00d9ff">Firebase Console > Firestore Database</a>`,
+                             "Click <strong>Create Database</strong>",
+                             "Choose a location",
+                             "Select <strong>Start in Test Mode</strong>",
+                             "Click <strong>Create</strong>"
+                         ]);
+                         throw new Error("Database not configured"); // Stop execution
+                    }
+
                     // Use catch block to handle offline gracefully
                     if (e.code === 'unavailable' || e.message.includes("offline")) {
                         throw new Error("You are offline. Please check connection.");
@@ -504,6 +532,18 @@
                     }, { merge: true });
                 } catch (e) {
                     console.error('Storage Write Error:', e);
+                    
+                    if (e.message.includes("database (default) does not exist") || e.code === 'not-found') {
+                         showConfigError("Database Not Found", "The Firestore Database has not been created yet.", [
+                             `Go to <a href="https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore" target="_blank" style="color:#00d9ff">Firebase Console > Firestore Database</a>`,
+                             "Click <strong>Create Database</strong>",
+                             "Choose a location",
+                             "Select <strong>Start in Test Mode</strong>",
+                             "Click <strong>Create</strong>"
+                         ]);
+                         throw new Error("Database not configured");
+                    }
+
                     if (e.code === 'unavailable') {
                         // Offline persistence will eventually sync, so we don't throw hard error
                         console.log("Write queued offline");
@@ -593,17 +633,23 @@
                 startRealtimeListener();
             } catch (e) {
                 console.error("Session Creation Failed", e);
-                if (e.message.includes("Permission")) {
-                    alert("DATABASE ERROR: " + e.message + "\n\nGo to Firebase Console -> Firestore Database -> Rules, and ensure they allow read/write.");
-                } else if (e.message.includes("authenticated")) {
-                    alert("AUTH ERROR: Not authenticated. Please reload.");
-                } else {
-                    notify(`❌ Error: ${e.message || e}`);
+                // The explicit "not found" handler is inside storage.save, 
+                // so here we just catch generic errors unless it's handled.
+                if (!document.querySelector('.screen h1')?.innerText.includes("Error")) {
+                     if (e.message.includes("Permission")) {
+                        alert("DATABASE ERROR: " + e.message + "\n\nGo to Firebase Console -> Firestore Database -> Rules, and ensure they allow read/write.");
+                    } else if (e.message.includes("authenticated")) {
+                        alert("AUTH ERROR: Not authenticated. Please reload.");
+                    } else if (!e.message.includes("Database not configured")) {
+                        notify(`❌ Error: ${e.message || e}`);
+                    }
                 }
                 
-                app.mode = 'select';
-                app.sessionId = '';
-                render();
+                if (!document.querySelector('.screen h1')?.innerText.includes("Error")) {
+                    app.mode = 'select';
+                    app.sessionId = '';
+                    render();
+                }
             }
         }
 
@@ -629,6 +675,8 @@
                     notify('❌ Session Not Found (Check Code)');
                 }
             } catch (e) {
+                if (e.message.includes("Database not configured")) return; // UI already handled
+
                 // If get fails (e.g. offline), try listening anyway
                 console.warn("Join Error, attempting fallback listener", e);
                 app.sessionId = clean;
