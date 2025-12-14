@@ -370,7 +370,6 @@
             measurementId: "G-QH7BVZ2J8Q"
         };
         
-        // Use projectId for the data path to ensure uniqueness
         const appId = firebaseConfig.projectId;
         console.log("Using Custom Config. App ID:", appId);
 
@@ -391,7 +390,6 @@
 
             authPromise = new Promise(async (resolve, reject) => {
                 try {
-                    // Try Anonymous Auth
                     await signInAnonymously(auth);
                     console.log("Auth Success. User:", auth.currentUser.uid);
                     currentUserUid = auth.currentUser.uid;
@@ -399,27 +397,6 @@
                     resolve(auth.currentUser);
                 } catch (e) {
                     console.error("Auth Error:", e);
-                    
-                    // Show helpful UI if config is missing in console
-                    if (e.code === 'auth/configuration-not-found' || e.code === 'auth/operation-not-allowed') {
-                        document.getElementById('app').innerHTML = `
-                            <div class="screen" style="flex-direction:column; text-align:center; padding:20px;">
-                                <h1 style="color:#ff4444; font-size:40px; margin-bottom: 20px;">⚠️ Configuration Error</h1>
-                                <p style="font-size:18px; margin-bottom:30px;">Firebase Authentication is not enabled.</p>
-                                <div style="background:rgba(255,255,255,0.1); padding:30px; border-radius:12px; text-align:left; max-width: 500px;">
-                                    <strong style="font-size: 20px; color: #00d9ff; display: block; margin-bottom: 15px;">How to fix:</strong>
-                                    <ol style="margin-left:20px; line-height:1.8; font-size: 16px;">
-                                        <li>Go to <a href="https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication" target="_blank" style="color:#00d9ff; font-weight: bold; text-decoration: none;">Firebase Console</a></li>
-                                        <li>Click <strong>Authentication</strong> > <strong>Get Started</strong></li>
-                                        <li>Click <strong>Sign-in method</strong> tab</li>
-                                        <li>Enable <strong>Anonymous</strong> provider</li>
-                                        <li>Save changes and refresh this page</li>
-                                    </ol>
-                                </div>
-                            </div>
-                        `;
-                    }
-                    
                     reject(e);
                     authPromise = null;
                 }
@@ -448,7 +425,6 @@
         let unsubscribe = null;
 
         const storage = {
-            // Listen for changes
             listen(sessionId, callback) {
                 if (unsubscribe) unsubscribe();
                 try {
@@ -458,14 +434,16 @@
                             callback(docSnap.data());
                         }
                     }, (error) => {
-                         console.error("Listener Error (Check Firestore Rules):", error);
+                         console.error("Listener Error:", error);
+                         if (error.code === 'permission-denied') {
+                             notify('⚠️ DB Permission Denied: Check Firestore Rules');
+                         }
                     });
                 } catch(e) {
                     console.error("Listen error", e);
                 }
             },
 
-            // Check existence / Get once
             async get(sessionId) {
                 await initAuth();
                 try {
@@ -474,18 +452,20 @@
                     if (snap.exists()) return snap.data();
                 } catch (e) {
                     console.error('Storage Read Error:', e);
+                    if (e.code === 'permission-denied') {
+                        throw new Error("Database Permission Denied. Please enable Firestore in your console.");
+                    }
+                    throw e; // Rethrow to let caller handle
                 }
                 return null;
             },
             
-            // Save Data
             async save(sessionId, data) {
                 const user = await initAuth();
-                if (!user) return;
+                if (!user) throw new Error("Not authenticated");
 
                 try {
                     const docRef = doc(db, 'artifacts', appId, 'public', 'data', COLLECTION_NAME, sessionId);
-                    // Store plain JSON data
                     await setDoc(docRef, {
                         ...data,
                         updatedAt: Date.now(),
@@ -493,6 +473,10 @@
                     }, { merge: true });
                 } catch (e) {
                     console.error('Storage Write Error:', e);
+                    if (e.code === 'permission-denied') {
+                        throw new Error("Database Permission Denied. Check Firestore Rules in Console.");
+                    }
+                    throw e; // Rethrow so createSession knows it failed
                 }
             }
         };
@@ -518,7 +502,7 @@
             n.className = 'notification';
             n.textContent = msg;
             document.body.appendChild(n);
-            setTimeout(() => n.remove(), 3000);
+            setTimeout(() => n.remove(), 5000); // Increased duration to read errors
         }
 
         function speak(text) {
@@ -532,7 +516,6 @@
 
         // --- Core Logic ---
 
-        // Sync local state to Firebase
         async function syncData() {
             if (!app.sessionId) return;
             
@@ -545,7 +528,6 @@
             await storage.save(app.sessionId, dataToSave);
         }
 
-        // Receive data from Firebase
         function onDataUpdate(data) {
             if (!data) return;
             if (data.words) app.words = data.words;
@@ -562,29 +544,31 @@
                 const name = prompt('Session Name:') || 'My Session';
                 const id = Math.random().toString(36).substr(2, 6).toUpperCase();
                 
+                // Set state first so UI updates
                 app.mode = 'host';
                 app.sessionId = id;
                 app.sessionName = name;
                 app.words = [];
-                
-                // Optimistic render
                 render();
                 
                 notify("⏳ Saving to cloud...");
-                await syncData(); // Initial save
+                await syncData(); // This will throw if permissions are bad
                 
                 notify(`✨ Created: ${id}`);
                 startRealtimeListener();
-                // Render again to ensure state is consistent
-                render();
             } catch (e) {
                 console.error("Session Creation Failed", e);
-                notify(`❌ Error: ${e.message || e}`);
-                // Restore mode if failed
-                if (app.mode === 'host') {
-                    app.mode = 'select';
-                    render();
+                // Important: Show error on screen so user knows why
+                if (e.message.includes("Permission")) {
+                    alert("DATABASE ERROR: " + e.message + "\n\nGo to Firebase Console -> Firestore Database -> Rules, and ensure they allow read/write.");
+                } else {
+                    notify(`❌ Error: ${e.message || e}`);
                 }
+                
+                // Revert state
+                app.mode = 'select';
+                app.sessionId = '';
+                render();
             }
         }
 
@@ -593,18 +577,23 @@
             const clean = id.trim().toUpperCase();
             if (!clean) { notify('❌ Invalid ID'); return; }
             
-            app.sessionId = clean;
+            notify("⏳ Connecting...");
             
-            // Check if exists
-            const data = await storage.get(clean);
-            
-            if (data) {
-                onDataUpdate(data);
-                app.mode = 'audience';
-                notify('✨ Connected');
-                startRealtimeListener();
-            } else {
-                notify('❌ Session Not Found');
+            try {
+                const data = await storage.get(clean);
+                
+                if (data) {
+                    app.sessionId = clean;
+                    onDataUpdate(data);
+                    app.mode = 'audience';
+                    notify('✨ Connected');
+                    startRealtimeListener();
+                } else {
+                    notify('❌ Session Not Found (Check Code)');
+                }
+            } catch (e) {
+                console.error("Join Error", e);
+                notify(`❌ Connection Error: ${e.message}`);
             }
             render();
         }
@@ -631,10 +620,18 @@
                 timestamp: Date.now(), 
                 id: Math.random().toString(36).substr(2, 9) 
             });
-            await syncData();
-            app.isSubmitted = true;
-            notify('✨ Sent');
-            render();
+            
+            try {
+                await syncData();
+                app.isSubmitted = true;
+                notify('✨ Sent');
+                render();
+            } catch (e) {
+                notify("❌ Send Failed: " + e.message);
+                // Rollback optimistic update
+                app.words.pop(); 
+                render();
+            }
         }
 
         // --- Features ---
@@ -657,7 +654,7 @@
                 });
                 const data = await response.json();
                 app.summary = data.candidates[0].content.parts[0].text;
-                await syncData(); // Save summary to cloud
+                await syncData();
                 speak(app.summary);
             } catch (e) {
                 console.error(e);
