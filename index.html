@@ -359,13 +359,33 @@
         import { getAuth, signInAnonymously, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
         import { getFirestore, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
-        const firebaseConfig = JSON.parse(__firebase_config || '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app';
-        console.log("App ID:", appId);
+        // --- Error Handling & Config Loading ---
+        let firebaseApp, auth, db, appId;
 
-        const firebaseApp = initializeApp(firebaseConfig);
-        const auth = getAuth(firebaseApp);
-        const db = getFirestore(firebaseApp);
+        try {
+            const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+            const firebaseConfig = JSON.parse(configStr);
+            appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app';
+            
+            console.log("Initializing App with ID:", appId);
+            
+            if (Object.keys(firebaseConfig).length === 0) {
+                console.warn("No Firebase config found. App may not function correctly.");
+            }
+
+            firebaseApp = initializeApp(firebaseConfig);
+            auth = getAuth(firebaseApp);
+            db = getFirestore(firebaseApp);
+        } catch (err) {
+            document.getElementById('app').innerHTML = `
+                <div class="screen" style="flex-direction:column; text-align:center;">
+                    <h2 style="color: #ff4444;">Configuration Error</h2>
+                    <p style="opacity:0.7;">${err.message}</p>
+                    <p style="font-size:12px; margin-top:10px;">Check browser console for details.</p>
+                </div>
+            `;
+            throw err; // Stop execution
+        }
 
         // --- Robust Auth System ---
         let authPromise = null;
@@ -398,7 +418,8 @@
             return authPromise;
         }
 
-        initAuth();
+        // Initialize immediately
+        initAuth().catch(e => console.error("Initial auth failed:", e));
 
         // Background
         const starsContainer = document.getElementById('stars');
