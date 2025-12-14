@@ -356,36 +356,27 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-        import { getAuth, signInAnonymously, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
         import { getFirestore, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
-        // --- Error Handling & Config Loading ---
-        let firebaseApp, auth, db, appId;
+        // --- Custom Firebase Configuration ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyA1dAMbQ8xPDAO_2hkym7LOivHGYfg7k6Q",
+            authDomain: "feedback-summarizer-36c66.firebaseapp.com",
+            projectId: "feedback-summarizer-36c66",
+            storageBucket: "feedback-summarizer-36c66.firebasestorage.app",
+            messagingSenderId: "900418309044",
+            appId: "1:900418309044:web:dc7317afbcdde4da0600e1",
+            measurementId: "G-QH7BVZ2J8Q"
+        };
+        
+        // Use projectId for the data path to ensure uniqueness
+        const appId = firebaseConfig.projectId;
+        console.log("Using Custom Config. App ID:", appId);
 
-        try {
-            const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-            const firebaseConfig = JSON.parse(configStr);
-            appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app';
-            
-            console.log("Initializing App with ID:", appId);
-            
-            if (Object.keys(firebaseConfig).length === 0) {
-                console.warn("No Firebase config found. App may not function correctly.");
-            }
-
-            firebaseApp = initializeApp(firebaseConfig);
-            auth = getAuth(firebaseApp);
-            db = getFirestore(firebaseApp);
-        } catch (err) {
-            document.getElementById('app').innerHTML = `
-                <div class="screen" style="flex-direction:column; text-align:center;">
-                    <h2 style="color: #ff4444;">Configuration Error</h2>
-                    <p style="opacity:0.7;">${err.message}</p>
-                    <p style="font-size:12px; margin-top:10px;">Check browser console for details.</p>
-                </div>
-            `;
-            throw err; // Stop execution
-        }
+        const firebaseApp = initializeApp(firebaseConfig);
+        const auth = getAuth(firebaseApp);
+        const db = getFirestore(firebaseApp);
 
         // --- Robust Auth System ---
         let authPromise = null;
@@ -400,17 +391,14 @@
 
             authPromise = new Promise(async (resolve, reject) => {
                 try {
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await signInWithCustomToken(auth, __initial_auth_token);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
+                    // Try Anonymous Auth
+                    await signInAnonymously(auth);
                     console.log("Auth Success. User:", auth.currentUser.uid);
                     currentUserUid = auth.currentUser.uid;
                     renderDebug();
                     resolve(auth.currentUser);
                 } catch (e) {
-                    console.error("Auth Error:", e);
+                    console.error("Auth Error (Check if Anonymous Auth is enabled in Firebase Console):", e);
                     reject(e);
                     authPromise = null;
                 }
@@ -448,6 +436,8 @@
                         if (docSnap.exists()) {
                             callback(docSnap.data());
                         }
+                    }, (error) => {
+                         console.error("Listener Error (Check Firestore Rules):", error);
                     });
                 } catch(e) {
                     console.error("Listen error", e);
