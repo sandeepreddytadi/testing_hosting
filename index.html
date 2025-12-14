@@ -636,19 +636,24 @@
                 // The explicit "not found" handler is inside storage.save, 
                 // so here we just catch generic errors unless it's handled.
                 if (!document.querySelector('.screen h1')?.innerText.includes("Error")) {
-                     if (e.message.includes("Permission")) {
-                        alert("DATABASE ERROR: " + e.message + "\n\nGo to Firebase Console -> Firestore Database -> Rules, and ensure they allow read/write.");
+                     if (e.message.includes("Permission") || e.code === 'permission-denied') {
+                        showConfigError("Database Locked", "Your Firestore Database security rules are blocking writes.", [
+                             `Go to <a href="https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/rules" target="_blank" style="color:#00d9ff">Firebase Console > Firestore > Rules</a>`,
+                             "Change <code>allow read, write: if false;</code> to <strong><code>allow read, write: if true;</code></strong>",
+                             "Click <strong>Publish</strong>",
+                             "Reload this page"
+                         ]);
                     } else if (e.message.includes("authenticated")) {
                         alert("AUTH ERROR: Not authenticated. Please reload.");
+                        app.mode = 'select';
+                        app.sessionId = '';
+                        render();
                     } else if (!e.message.includes("Database not configured")) {
                         notify(`❌ Error: ${e.message || e}`);
+                        app.mode = 'select';
+                        app.sessionId = '';
+                        render();
                     }
-                }
-                
-                if (!document.querySelector('.screen h1')?.innerText.includes("Error")) {
-                    app.mode = 'select';
-                    app.sessionId = '';
-                    render();
                 }
             }
         }
