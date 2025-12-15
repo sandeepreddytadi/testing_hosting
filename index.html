@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive Word Cloud - Radar Edition</title>
+    <title>Interactive Word Cloud - QR Edition</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         /* --- CORE THEME & RESET --- */
         * {
@@ -14,17 +15,15 @@
         }
 
         body {
-            /* --- PURE CSS BACKGROUND (No Image Required) --- */
+            /* --- PURE CSS BACKGROUND (Matches your Blue -> Purple image) --- */
             background: linear-gradient(135deg, #3656C4 0%, #C86DD7 100%);
-            /* Alternative Brighter Option: */
-            /* background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%); */
             
             color: #ffffff;
             min-height: 100vh;
             overflow-x: hidden;
             display: flex;
             flex-direction: column;
-            background-attachment: fixed; /* Keeps gradient fixed when scrolling */
+            background-attachment: fixed;
         }
 
         /* --- PARTICLES --- */
@@ -48,6 +47,7 @@
             align-items: center;
             justify-content: center;
             flex-direction: column;
+            background: rgba(0,0,0,0.1); 
         }
 
         /* --- DASHBOARD HEADER --- */
@@ -104,7 +104,7 @@
             box-shadow: 0 0 10px #00ff88;
         }
 
-        /* --- BUTTONS (UPDATED GRADIENTS) --- */
+        /* --- BUTTONS --- */
         .btn-group { display: flex; gap: 12px; }
 
         .btn {
@@ -133,7 +133,6 @@
         }
         .btn-ai:hover { background: rgba(255, 255, 255, 0.2); box-shadow: 0 0 20px rgba(255, 255, 255, 0.3); }
 
-        /* Updated to match Blue -> Purple Gradient */
         .btn-excel {
             background: linear-gradient(90deg, #3a7bd5 0%, #b24592 100%); 
             color: white;
@@ -141,7 +140,6 @@
         }
         .btn-excel:hover { box-shadow: 0 6px 20px rgba(178, 69, 146, 0.6); filter: brightness(1.1); }
 
-        /* NEW SUGGEST BUTTON STYLE */
         .btn-suggest {
             background: rgba(255, 255, 255, 0.15);
             border: 1px solid rgba(255, 255, 255, 0.3);
@@ -218,7 +216,7 @@
             text-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
         }
 
-        /* --- SESSION CODE BOX --- */
+        /* --- SESSION CODE BOX & QR --- */
         .session-box {
             background: rgba(0, 0, 0, 0.2);
             border: 1px solid rgba(255, 255, 255, 0.15);
@@ -226,6 +224,9 @@
             padding: 30px;
             margin-bottom: 30px;
             backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
         .section-label {
@@ -242,7 +243,7 @@
             background: rgba(255, 255, 255, 0.1);
             border: 1px solid rgba(255, 255, 255, 0.2);
             border-radius: 8px;
-            padding: 20px;
+            padding: 15px 40px;
             text-align: center;
             font-family: 'Courier New', monospace;
             font-size: 32px;
@@ -253,14 +254,23 @@
             text-shadow: 0 0 10px rgba(255,255,255,0.5);
         }
 
+        /* QR Code Container Styling */
+        .qr-container {
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+        }
+
         .btn-copy-lg {
             width: 100%;
-            /* Matching gradient */
+            max-width: 400px;
             background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%);
             color: white;
             font-size: 14px;
             font-weight: 800;
-            padding: 18px;
+            padding: 15px;
             border: none;
             border-radius: 8px;
             cursor: pointer;
@@ -334,7 +344,6 @@
             width: 500px;
             height: 500px;
             border-radius: 50%;
-            /* Gradient adapted to Purple/Blue theme */
             background: conic-gradient(
                 from 0deg, 
                 transparent 0deg, 
@@ -480,6 +489,7 @@
             border: 2px solid rgba(255, 255, 255, 0.2);
             border-radius: 8px; color: white; font-size: 16px; outline: none; margin: 10px 0;
             transition: 0.3s;
+            text-transform: uppercase; /* VISUAL UPPERCASE */
         }
         .input-field:focus { border-color: #fff; box-shadow: 0 0 20px rgba(255, 255, 255, 0.2); background: rgba(0,0,0,0.5); }
 
@@ -547,6 +557,14 @@
                 const cred = await signInAnonymously(auth);
                 state.currentUser = cred.user;
                 console.log("Auth initialized:", cred.user.uid);
+                
+                // AUTO-JOIN VIA URL Logic
+                const urlParams = new URLSearchParams(window.location.search);
+                const sessionParam = urlParams.get('session');
+                if (sessionParam) {
+                    joinSession(sessionParam);
+                }
+
             } catch (e) {
                 console.error("Auth error:", e);
                 notify("⚠️ Auth Error: Check Console");
@@ -628,14 +646,11 @@
             notify("⏳ Connecting...");
         };
 
-        // NEW: Fill Suggestion Logic
         window.fillSuggestion = () => {
             const input = document.getElementById('wordInput');
             if(!input) return;
-            // Get random word
             const word = SUGGESTIONS[Math.floor(Math.random() * SUGGESTIONS.length)];
-            input.value = word;
-            // Add a little pop animation to input
+            input.value = word; // Doesn't need to be upper, but visual style handles it
             input.style.transform = "scale(1.05)";
             setTimeout(() => input.style.transform = "scale(1)", 100);
         };
@@ -670,7 +685,6 @@
         window.downloadExcel = () => {
             if (state.words.length === 0) { notify('❌ No data'); return; }
             
-            // Frequency Analysis
             const freq = {};
             state.words.forEach(w => freq[w.text.toLowerCase()] = (freq[w.text.toLowerCase()] || 0) + 1);
             
@@ -683,7 +697,6 @@
                 ['WORD', 'COUNT', 'LAST SUBMITTED']
             ];
 
-            // Add sorted data
             Object.entries(freq)
                 .sort((a,b) => b[1] - a[1])
                 .forEach(([word, count]) => {
@@ -721,7 +734,7 @@
                 const data = await response.json();
                 if (data.candidates) {
                     state.summary = data.candidates[0].content.parts[0].text;
-                    state.isModalOpen = true; // Open the modal
+                    state.isModalOpen = true; 
                     await saveData();
                 } else {
                     notify("❌ AI Error: Check Key");
@@ -746,6 +759,10 @@
             state.mode = 'select';
             state.sessionId = '';
             state.words = [];
+            // clear URL param to clean up
+            const url = new URL(window.location);
+            url.searchParams.delete('session');
+            window.history.pushState({}, '', url);
             render();
         };
 
@@ -765,11 +782,11 @@
             if (state.mode === 'select') {
                 root.innerHTML = `
                     <div class="screen">
-                        <h1 style="font-size: 50px; font-weight: 800; margin-bottom: 10px; background: linear-gradient(to right, #00d9ff, #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">WORD CLOUD</h1>
-                        <p style="color: #6c7a9c; margin-bottom: 40px; letter-spacing: 2px;">REALTIME INTERACTIVE SESSION</p>
+                        <h1 style="font-size: 50px; font-weight: 800; margin-bottom: 10px; background: linear-gradient(to right, #fff, #b388ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 5px 15px rgba(0,0,0,0.2);">WORD CLOUD</h1>
+                        <p style="color: rgba(255,255,255,0.8); margin-bottom: 40px; letter-spacing: 2px;">REALTIME INTERACTIVE SESSION</p>
                         
                         <div class="card-home">
-                            <button class="btn-copy-lg" onclick="createSession()" style="margin-bottom: 20px; background: linear-gradient(90deg, #7c4dff, #448aff);">
+                            <button class="btn-copy-lg" onclick="createSession()" style="margin-bottom: 20px; background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%);">
                                 🚀 START NEW SESSION
                             </button>
                             <div style="display: flex; align-items: center; gap: 10px; margin: 20px 0;">
@@ -777,7 +794,9 @@
                                 <span style="font-size:12px; color:rgba(255,255,255,0.4);">OR JOIN</span>
                                 <div style="flex:1; height:1px; background: rgba(255,255,255,0.1);"></div>
                             </div>
-                            <input id="joinInput" class="input-field" placeholder="ENTER 6-DIGIT CODE" style="text-align:center; letter-spacing: 3px;">
+                            <input id="joinInput" class="input-field" placeholder="ENTER 6-DIGIT CODE" 
+                                   style="text-align:center; letter-spacing: 3px;"
+                                   oninput="this.value = this.value.toUpperCase()">
                             <button class="btn btn-excel" onclick="joinSession(document.getElementById('joinInput').value)" style="width:100%; justify-content:center; margin-top:10px;">
                                 CONNECT
                             </button>
@@ -858,12 +877,12 @@
                         </div>
 
                         <div class="session-box">
-                            <div class="section-label">SESSION CODE</div>
+                            <div class="section-label">SCAN TO JOIN</div>
+                            <div id="qrcode" class="qr-container"></div>
+                            
+                            <div class="section-label" style="margin-top:10px;">OR USE CODE</div>
                             <div class="code-display" onclick="copyCode()">${state.sessionId.split('').join(' ')}</div>
                             <button class="btn-copy-lg" onclick="copyCode()">📋 COPY SESSION CODE</button>
-                            <div class="footer-status">
-                                <span style="color:#00ff88">✓</span> Auto-saving to Excel storage
-                            </div>
                         </div>
 
                         <div class="section-label">LIVE DATA STREAM</div>
@@ -880,7 +899,7 @@
 
                             ${Object.entries(freq).map(([txt, count]) => {
                                 const size = Math.min(1.5 + (count * 0.2), 4);
-                                const color = count > 1 ? '#00d9ff' : '#6c7a9c';
+                                const color = count > 1 ? '#fff' : 'rgba(255,255,255,0.7)';
                                 const pos = getStablePosition(txt);
                                 return `<span class="cloud-word" 
                                     style="font-size: ${size}rem; color: ${color}; left: ${pos.left}%; top: ${pos.top}%;">
@@ -889,20 +908,36 @@
                             }).join('')}
                             
                             ${state.words.length === 0 ? 
-                                '<span class="cloud-word" style="color: rgba(255,255,255,0.3); font-style: italic; left: 50%; top: 50%;">Waiting for live signals...</span>' 
+                                '<span class="cloud-word" style="color: rgba(255,255,255,0.5); font-style: italic; left: 50%; top: 50%;">Waiting for live signals...</span>' 
                                 : ''}
                         </div>
                     </div>
                 `;
+
+                // GENERATE QR CODE AFTER RENDER
+                setTimeout(() => {
+                    const qrContainer = document.getElementById('qrcode');
+                    if (qrContainer && qrContainer.innerHTML === '') {
+                        const joinUrl = window.location.origin + window.location.pathname + '?session=' + state.sessionId;
+                        new QRCode(qrContainer, {
+                            text: joinUrl,
+                            width: 128,
+                            height: 128,
+                            colorDark : "#000000",
+                            colorLight : "#ffffff",
+                            correctLevel : QRCode.CorrectLevel.H
+                        });
+                    }
+                }, 100);
             }
 
             // 3. AUDIENCE VIEW
             if (state.mode === 'audience') {
                 root.innerHTML = `
                     <div class="screen" style="padding: 20px;">
-                        <h2 style="color: #00d9ff; margin-bottom: 20px;">${state.sessionName}</h2>
+                        <h2 style="color: #fff; margin-bottom: 20px; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">${state.sessionName}</h2>
                         <div class="card-home">
-                            <label style="font-size: 12px; color: #6c7a9c; text-transform: uppercase;">Your Word</label>
+                            <label style="font-size: 12px; color: rgba(255,255,255,0.7); text-transform: uppercase;">Your Word</label>
                             
                             <input id="wordInput" class="input-field" maxlength="25" placeholder="Type here..." autocomplete="off">
                             
@@ -919,7 +954,7 @@
                             <h4 style="color:white; margin-bottom: 15px;">Recent Entries</h4>
                             <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;">
                                 ${state.words.slice(-10).reverse().map(w => 
-                                    `<span style="background: rgba(255,255,255,0.1); padding: 5px 10px; border-radius: 15px; font-size: 12px;">${w.text}</span>`
+                                    `<span style="background: rgba(255,255,255,0.15); padding: 5px 10px; border-radius: 15px; font-size: 12px;">${w.text}</span>`
                                 ).join('')}
                             </div>
                         </div>
