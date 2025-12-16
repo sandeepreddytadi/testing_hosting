@@ -307,7 +307,7 @@
                 const existingWords = state.words.map(w => w.text);
 
                 // Call your Netlify backend
-                const response = await fetch('/.netlify/functions/suggest', {
+                const response = await fetch('/.netlify/functions/suggest-word', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
