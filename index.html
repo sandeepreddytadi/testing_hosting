@@ -15,7 +15,7 @@
         }
 
         body {
-            /* --- PURE CSS BACKGROUND (Matches your Blue -> Purple image) --- */
+            /* --- PURE CSS BACKGROUND --- */
             background: linear-gradient(135deg, #3656C4 0%, #C86DD7 100%);
             
             color: #ffffff;
@@ -379,6 +379,7 @@
             cursor: default; 
             font-weight: 700;
             text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            transition: left 0.5s ease, top 0.5s ease; /* Smooth movement if position updates */
         }
         .cloud-word:hover { z-index: 20; transform: translate(-50%, -50%) scale(1.2); text-shadow: 0 0 15px currentColor; }
         @keyframes popIn { from { opacity: 0; transform: translate(-50%, -50%) scale(0.5); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
@@ -809,6 +810,64 @@
                 const freq = {};
                 state.words.forEach(w => freq[w.text] = (freq[w.text] || 0) + 1);
 
+                // --- COLLISION DETECTION & PLACEMENT LOGIC ---
+                // 1. Sort entries so bigger words (higher freq) are placed first
+                const sortedEntries = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+                const placedItems = []; // To keep track of boundaries
+
+                const cloudHtml = sortedEntries.map(([txt, count]) => {
+                    const size = Math.min(1.5 + (count * 0.2), 4); // Font Size Rem
+                    const color = count > 1 ? '#fff' : 'rgba(255,255,255,0.7)';
+                    
+                    // Initial Position Guess (Random but deterministic)
+                    let pos = getStablePosition(txt); 
+                    
+                    // Simple collision resolution
+                    let attempts = 0;
+                    const maxAttempts = 50; 
+                    let hasCollision = true;
+
+                    while (hasCollision && attempts < maxAttempts) {
+                        hasCollision = false;
+                        for (const item of placedItems) {
+                            // Calculate distance between centers
+                            const dx = pos.left - item.left;
+                            const dy = pos.top - item.top;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            
+                            // Rough minimal distance based on word sizes
+                            // (Adjust 1.5 multiplier to loosen/tighten packing)
+                            const minDist = (size + item.size) * 1.5; 
+
+                            if (dist < minDist) {
+                                hasCollision = true;
+                                // Move slightly in a spiral/random direction
+                                const angle = Math.random() * Math.PI * 2;
+                                const moveDist = 5 + (attempts * 0.5); 
+                                pos.left += Math.cos(angle) * moveDist;
+                                pos.top += Math.sin(angle) * moveDist;
+
+                                // Boundary Checks (0-100%)
+                                if (pos.left < 5) pos.left = 5;
+                                if (pos.left > 95) pos.left = 95;
+                                if (pos.top < 5) pos.top = 5;
+                                if (pos.top > 95) pos.top = 95;
+                                break;
+                            }
+                        }
+                        attempts++;
+                    }
+
+                    // Save this position as "occupied"
+                    placedItems.push({ left: pos.left, top: pos.top, size: size });
+
+                    return `<span class="cloud-word" 
+                        style="font-size: ${size}rem; color: ${color}; left: ${pos.left}%; top: ${pos.top}%;">
+                        ${txt}
+                    </span>`;
+                }).join('');
+                // ---------------------------------------------
+
                 // Modal Logic
                 const modalHtml = `
                     <div class="modal-overlay ${state.isModalOpen ? 'active' : ''}">
@@ -892,15 +951,7 @@
                                 <div class="radar-center-dot"></div>
                             </div>
 
-                            ${Object.entries(freq).map(([txt, count]) => {
-                                const size = Math.min(1.5 + (count * 0.2), 4);
-                                const color = count > 1 ? '#fff' : 'rgba(255,255,255,0.7)';
-                                const pos = getStablePosition(txt);
-                                return `<span class="cloud-word" 
-                                    style="font-size: ${size}rem; color: ${color}; left: ${pos.left}%; top: ${pos.top}%;">
-                                    ${txt}
-                                </span>`;
-                            }).join('')}
+                            ${cloudHtml}
                             
                             ${state.words.length === 0 ? 
                                 '<span class="cloud-word" style="color: rgba(255,255,255,0.5); font-style: italic; left: 50%; top: 50%;">Waiting for live signals...</span>' 
