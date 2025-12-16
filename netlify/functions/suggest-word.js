@@ -3,8 +3,7 @@ export async function handler(event) {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
 
-  // --- 1. THE SAFETY NET (Guaranteed 100% Uptime) ---
-  // If the AI is too busy or slow, we instantly return one of these.
+  // --- 1. CONFIG: BACKUP LIST ---
   const EMERGENCY_BACKUP_WORDS = [
     "Momentum", "Spark", "Velocity", "Impact", "Pulse", 
     "Ignite", "Orbit", "Flux", "Catalyst", "Zenith",
@@ -12,8 +11,7 @@ export async function handler(event) {
     "Bold", "Drive", "Focus", "Unity", "Scale"
   ];
 
-  // --- 2. THE RACERS (Small, Fast Models) ---
-  // We run these in PARALLEL. The first one to finish wins.
+  // --- 2. CONFIG: RACING MODELS ---
   const MODELS = [
     "amazon/nova-2-lite-v1:free",
     "meta-llama/llama-3.2-3b-instruct:free",
@@ -21,25 +19,32 @@ export async function handler(event) {
     "mistralai/mistral-7b-instruct:free"
   ];
 
+  // 🔴 FIX: Declare this OUTSIDE the try block
+  let existingWords = [];
+  let sessionName = "Session";
+
   try {
-    const { sessionName, existingWords = [] } = JSON.parse(event.body || "{}");
+    // 3. PARSE INPUT
+    const body = JSON.parse(event.body || "{}");
+    existingWords = body.existingWords || [];
+    sessionName = body.sessionName || "Session";
+
     const avoidList = existingWords.join(", ");
 
-    // If no key, skip straight to backup
+    // Check Key
     if (!process.env.OPENROUTER_API_KEY) throw new Error("No Key");
 
     const prompt = `
-      Suggest ONE single positive word for corporate session "${sessionName}".
+      Suggest ONE single positive word for corporate away day for feedback.
       Do NOT use emojis. Do NOT use sentences.
       Do NOT repeat: ${avoidList}
       Respond with ONLY the word.
     `;
 
-    // --- 3. THE RACE (Timeout set to 3 seconds) ---
-    // We try multiple models at once. If they take > 3s, we use the backup.
+    // 4. THE RACE LOGIC (3s Timeout)
     const fetchPromise = (model) => {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s hard timeout
+      const timeoutId = setTimeout(() => controller.abort(), 3000); 
 
       return fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -65,10 +70,10 @@ export async function handler(event) {
       });
     };
 
-    // Promise.any waits for the FIRST success, ignores failures
+    // Wait for the FIRST winner
     const winner = await Promise.any(MODELS.map(model => fetchPromise(model)));
     
-    // Clean up the winner
+    // Clean Output
     let cleanWord = winner.word.replace(/[^a-zA-Z]/g, "").trim();
 
     return {
@@ -77,13 +82,12 @@ export async function handler(event) {
     };
 
   } catch (err) {
-    // --- 4. THE FALLBACK EXECUTION ---
-    // If ALL models fail or time out, we land here.
+    // --- 5. FALLBACK LOGIC ---
     console.warn("⚠️ AI busy/failed. Using Backup.", err.message);
     
-    // Pick a random backup word that hasn't been used recently (simple filter)
+    // 🔴 Now 'existingWords' is accessible here!
     const availableBackups = EMERGENCY_BACKUP_WORDS.filter(w => !existingWords.includes(w));
-    // If we used all backups, just pick any random one
+    
     const finalSet = availableBackups.length > 0 ? availableBackups : EMERGENCY_BACKUP_WORDS;
     const backupWord = finalSet[Math.floor(Math.random() * finalSet.length)];
 
