@@ -13,8 +13,19 @@ export async function handler(event) {
       };
     }
 
-    const prompt =
-      `Analyze these words from a live session and give a 2 sentence summary of the group's sentiment/vibe: ${words.join(", ")}`;
+    const prompt = `
+      You are a professional corporate host and facilitator summarizing one-word feedback from a company away-day session 
+      (including ice-breakers, team discussions, and reflections).
+      
+      Guidelines:
+      - Keep the tone warm, positive, and inclusive
+      - Frame the feedback as shared energy, openness, and team connection
+      - Gently turn any challenging words into learning or growth moments
+      - Avoid criticism, analysis jargon, or mentioning negatives
+      - Write 2–3 short, confident sentences suitable for a big screen
+      
+      One-word feedback from participants:
+      ${words.join(", ")}`;
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
