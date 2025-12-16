@@ -1,44 +1,57 @@
 export async function handler(event) {
-    if (event.httpMethod !== "POST") {
-        return { statusCode: 405, body: "Method Not Allowed" };
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, body: "Method Not Allowed" };
+  }
+
+  try {
+    const { words } = JSON.parse(event.body || "{}");
+
+    if (!words || words.length === 0) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "No words provided" })
+      };
     }
 
-    try {
-        const { words } = JSON.parse(event.body);
-        const text = words.join(", ");
+    const prompt =
+      `Analyze these words from a live session and give a 2 sentence summary of the group's sentiment/vibe: ${words.join(", ")}`;
 
-        const res = await fetch(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          contents: [
             {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${process.env.GEMINI_API_KEY}`
-                },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [{
-                            text: `Analyze these words from a live session and give a 2 sentence summary of the group's sentiment/vibe: ${text}`
-                        }]
-                    }]
-                })
+              parts: [{ text: prompt }]
             }
-        );
+          ]
+        })
+      }
+    );
 
-        const data = await res.json();
-        const summary =
-            data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const data = await response.json();
 
-        return {
-            statusCode: 200,
-            body: JSON.stringify({ summary })
-        };
+    console.log("Gemini raw response:", JSON.stringify(data));
 
-    } catch (err) {
-        console.error(err);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ error: "AI failure" })
-        };
-    }
+    const summary =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        summary: summary || "No insights generated"
+      })
+    };
+
+  } catch (err) {
+    console.error("Analyze error:", err);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "AI failure" })
+    };
+  }
 }
