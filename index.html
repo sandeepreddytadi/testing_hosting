@@ -393,7 +393,7 @@
         function render() {
             const root = document.getElementById('app');
 
-            // 1. HOME SCREEN (Simplified - No QR, No Input Code)
+            // 1. HOME SCREEN
             if (state.mode === 'select') {
                 root.innerHTML = `
                     <div class="screen">
@@ -409,7 +409,7 @@
 
                             <div style="width: 100%; height: 1px; background: rgba(255,255,255,0.1); margin: 20px 0;"></div>
                             
-                            <button class="btn-host-login" onclick="loginHost()">
+                            <button class="btn-host-login" onclick="loginAsHost()">
                                 🔒 Host Admin
                             </button>
                         </div>
@@ -418,7 +418,7 @@
                 return;
             }
 
-            // 2. HOST DASHBOARD (No QR Display)
+            // 2. HOST DASHBOARD
             if (state.mode === 'host') {
                 const totalWords = state.words.length;
                 const uniqueWords = new Set(state.words.map(w => w.text.toLowerCase())).size;
