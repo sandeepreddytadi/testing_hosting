@@ -89,6 +89,7 @@
 
         .btn-suggest { background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); color: #fff; padding: 12px 25px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 8px; margin: 15px auto; transition: all 0.2s; width: fit-content; letter-spacing: 1px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
         .btn-suggest:hover { border-color: #fff; background: rgba(255, 255, 255, 0.25); color: white; transform: scale(1.02); }
+        .btn-suggest:disabled { opacity: 0.5; cursor: not-allowed; }
         .sparkle-icon { color: #ffd700; font-size: 16px; }
 
         .btn-reset { background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.1); color: #ccc; }
@@ -184,14 +185,6 @@
         const COLLECTION_NAME = 'word_cloud_sessions';
         const FIXED_SESSION_ID = "EVENT-2025"; // Fixed ID for everyone
         const HOST_PIN = "2025"; // Security PIN for host
-
-        // Suggestion List for "Magic" Button (Client Side is faster for this)
-        const SUGGESTIONS = [
-            "Teamwork", "Agile", "Innovation", "Speed", "Growth", 
-            "Synergy", "Future", "Success", "Power", "Trust", 
-            "Focus", "Strategy", "Creative", "Bold", "Impact",
-            "Win", "Customer", "Value", "Build", "Scale"
-        ];
 
         // --- State Management ---
         let state = {
@@ -296,14 +289,51 @@
             }
         };
 
-        window.fillSuggestion = () => {
+        // 3. AI SUGGESTION (Replaces Static List)
+        window.fillSuggestion = async () => {
             const input = document.getElementById('wordInput');
+            const btn = document.querySelector('.btn-suggest');
+            
             if(!input) return;
-            // Pick random suggestion from static list
-            const word = SUGGESTIONS[Math.floor(Math.random() * SUGGESTIONS.length)];
-            input.value = word; 
-            input.style.transform = "scale(1.05)";
-            setTimeout(() => input.style.transform = "scale(1)", 100);
+
+            // Loading state
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<span class="sparkle-icon">⏳</span> THINKING...';
+            btn.disabled = true;
+            input.placeholder = "AI is thinking...";
+
+            try {
+                // Pass existing words so AI doesn't repeat them
+                const existingWords = state.words.map(w => w.text);
+
+                // Call your Netlify backend
+                const response = await fetch('/.netlify/functions/suggest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sessionName: state.sessionName,
+                        existingWords: existingWords
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.word) {
+                    input.value = data.word;
+                    input.style.transform = "scale(1.05)";
+                    setTimeout(() => input.style.transform = "scale(1)", 100);
+                } else {
+                    notify("❌ AI busy, try again!");
+                }
+            } catch (e) {
+                console.error(e);
+                notify("❌ Suggestion Failed");
+            } finally {
+                // Reset UI
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                input.placeholder = "Type here...";
+            }
         };
 
         window.submitWord = async (word) => {
@@ -361,18 +391,17 @@
         // --- REAL AI IMPLEMENTATION ---
         window.analyzeAI = async () => {
             if (state.words.length === 0) return;
-        
+
             state.isGenerating = true;
             render();
             
             try {
-                // CHANGED: Point to your backend function URL instead of Google directly
-                // If using Netlify, the path is usually /.netlify/functions/your_function_name
+                // Call Backend (analyze.js)
                 const response = await fetch('/.netlify/functions/analyze', { 
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        words: state.words.map(w => w.text) // Your backend expects { words: [...] }
+                        words: state.words.map(w => w.text)
                     })
                 });
                 
