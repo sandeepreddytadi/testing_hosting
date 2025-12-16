@@ -646,13 +646,38 @@
             notify("⏳ Connecting...");
         };
 
-        window.fillSuggestion = () => {
+        window.fillSuggestion = async () => {
             const input = document.getElementById('wordInput');
-            if(!input) return;
-            const word = SUGGESTIONS[Math.floor(Math.random() * SUGGESTIONS.length)];
-            input.value = word; // Doesn't need to be upper, but visual style handles it
-            input.style.transform = "scale(1.05)";
-            setTimeout(() => input.style.transform = "scale(1)", 100);
+            if (!input) return;
+        
+            input.value = "Thinking...";
+        
+            try {
+                const response = await fetch("/api/suggest-word", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        sessionName: state.sessionName,
+                        existingWords: state.words.map(w => w.text)
+                    })
+                });
+        
+                const data = await response.json();
+        
+                if (data.word) {
+                    input.value = data.word.toUpperCase();
+                    input.style.transform = "scale(1.05)";
+                    setTimeout(() => input.style.transform = "scale(1)", 120);
+                } else {
+                    input.value = "";
+                    notify("Try again ✨");
+                }
+        
+            } catch (e) {
+                console.error(e);
+                input.value = "";
+                notify("AI not available");
+            }
         };
 
         window.submitWord = async (word) => {
