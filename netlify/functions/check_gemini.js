@@ -1,74 +1,51 @@
+// deploy as: netlify/functions/debug-models.js
 export async function handler(event) {
+  // Only allow GET
   if (event.httpMethod !== "GET") {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
 
   try {
-    // 1️⃣ Check env key existence
-    if (!process.env.GEMINI_API_KEY) {
-      return {
-        statusCode: 500,
-        body: JSON.stringify({
-          step: "ENV_CHECK",
-          ok: false,
-          error: "GEMINI_API_KEY is missing in Netlify environment"
-        }, null, 2)
-      };
-    }
-
-    // 2️⃣ Build a strong test prompt
-    const prompt = `
-You are a test AI.
-
-Respond EXACTLY in this JSON format:
-{
-  "status": "OK",
-  "message": "Gemini is responding correctly",
-  "model": "name"
-}
-`;
-
-    // 3️⃣ Call Gemini
-    const response = await fetch(
-      // ✅ NEW (Use the model with 10,000 daily quota)
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-exp:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      }
-    );
-
-    const status = response.status;
+    // 1. Fetch all models from OpenRouter
+    const response = await fetch("https://openrouter.ai/api/v1/models");
     const data = await response.json();
+    const allModels = data.data || [];
 
-    // 4️⃣ Extract text safely
-    const text =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+    // 2. Filter for TRULY free models (price = 0)
+    // We check that prompt (input) AND completion (output) are both "0"
+    const freeModels = allModels.filter(m => {
+      const p = m.pricing;
+      return p && 
+             (p.prompt === "0" || p.prompt === 0) && 
+             (p.completion === "0" || p.completion === 0);
+    });
 
+    // 3. Sort them to put the most popular/robust ones on top
+    // (Optional: You can customize this sort)
+    freeModels.sort((a, b) => a.id.localeCompare(b.id));
+
+    // 4. Return the list
     return {
       statusCode: 200,
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        step: "GEMINI_RESPONSE",
-        httpStatus: status,
-        keyPresent: true,
-        hasCandidates: !!data?.candidates,
-        extractedText: text,
-        rawGeminiResponse: data
+        status: "OK",
+        count_total: allModels.length,
+        count_free: freeModels.length,
+        // We map just the useful fields to keep the output readable
+        free_models: freeModels.map(m => ({
+          id: m.id,
+          name: m.name,
+          context_length: m.context_length,
+          description: m.description ? m.description.substring(0, 60) + "..." : "No desc"
+        }))
       }, null, 2)
     };
 
   } catch (err) {
-    console.error("Debug error:", err);
     return {
       statusCode: 500,
-      body: JSON.stringify({
-        step: "EXCEPTION",
-        error: err.message,
-        stack: err.stack
-      }, null, 2)
+      body: JSON.stringify({ error: err.message })
     };
   }
 }
