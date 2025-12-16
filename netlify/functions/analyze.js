@@ -32,11 +32,11 @@ export async function handler(event) {
       headers: {
         "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://wordcloud-app.netlify.app", // Optional: put your site URL here
+        "HTTP-Referer": "https://gleeful-creponne-28e0dd.netlify.app/", // Optional: put your site URL here
         "X-Title": "Word Cloud App"
       },
       body: JSON.stringify({
-        "model": "google/gemini-2.0-flash-exp:free", // <--- THE MODEL YOU CHOSE
+        "model": "mistralai/mistral-7b-instruct:free", // <--- THE MODEL YOU CHOSE
         "messages": [
           { "role": "user", "content": prompt }
         ]
