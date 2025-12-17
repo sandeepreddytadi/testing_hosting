@@ -3,41 +3,48 @@ export async function handler(event) {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
 
-  // --- 1. CONFIGURATION ---
-  
-  // The Safety Net (Local Backup)
-  const BACKUP_WORDS = [
-    "Momentum", "Spark", "Impact", "Velocity", "Pulse", 
-    "Ignite", "Orbit", "Flux", "Catalyst", "Zenith", 
-    "Apex", "Rooted", "Flow", "Sync", "Quest",
-    "Bold", "Drive", "Focus", "Unity", "Scale"
+  // --- 1. CONFIG: FEEDBACK STYLES (The "Vibe" of the critique) ---
+  const FEEDBACK_STYLES = [
+    "Style: High Praise (e.g., Inspiring, Electric, Flawless)",
+    "Style: Constructive/Critical (e.g., Long, Rushed, Chaotic)",
+    "Style: Intellectual/Mental (e.g., Insightful, Deep, Useful)",
+    "Style: Emotional Reaction (e.g., Fun, Boring, Intense)",
+    "Style: Action-Oriented (e.g., Motivating, Urgent, Clear)",
+    "Style: Simple One-Word Review (e.g., Wow, Meh, Solid)"
   ];
 
-  // Your requested OpenRouter Models
-  // We will pick ONE random one per request to keep variety high but rate limits low.
-  const OPENROUTER_MODELS = [
-    "meta-llama/llama-3.2-3b-instruct:free",
-    "google/gemini-2.0-flash-exp:free",
-    "mistralai/mistral-7b-instruct:free",
-    "microsoft/phi-3-mini-128k-instruct:free",
-    "openrouter/auto"
+  // Safety net for 100% uptime
+  const BACKUP_WORDS = [
+    "Inspiring", "Useful", "Fun", "Long", "Engaging", 
+    "Chaotic", "Clear", "Boring", "Fast", "Deep", 
+    "Electric", "Solid", "Relevant", "Dry", "Eye-opening",
+    "Slow", "Powerful", "Confusing", "Bold", "Helpful"
   ];
 
   try {
     const { sessionName, existingWords = [] } = JSON.parse(event.body || "{}");
     const avoidList = existingWords.join(", ");
 
+    // Pick a random style so every button click feels different
+    const randomStyle = FEEDBACK_STYLES[Math.floor(Math.random() * FEEDBACK_STYLES.length)];
+    const salt = Math.floor(Math.random() * 10000); 
+
     const prompt = `
-      Suggest ONE single positive word for corporate session "${sessionName}".
-      Do NOT use emojis. Do NOT use sentences.
-      Do NOT repeat these words: ${avoidList}.
-      Respond with ONLY the word.
+      Context: You are an attendee at a corporate event named "${sessionName}".
+      Task: Give ONE single word of feedback to describe your experience.
+      
+      Constraint: Give me a word that fits this style: ${randomStyle}.
+      Negative Constraint: Do NOT use these words: ${avoidList}.
+      Formatting: ONE single adjective or noun. No punctuation.
+      
+      Examples of good output: "Energizing", "Draggy", "Sharp", "Vague".
+      Request ID: ${salt}
     `;
 
-    // --- 2. THE RACE TRACK (3 Lanes) ---
+    // --- 2. THE RACE (3 Lanes) ---
     const requests = [];
 
-    // --- LANE 1: GROQ (Fastest) ---
+    // Lane 1: Groq (Fastest)
     if (process.env.GROQ_API_KEY) {
       requests.push(
         fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -48,18 +55,19 @@ export async function handler(event) {
           },
           body: JSON.stringify({
             model: "llama-3.1-8b-instant",
-            messages: [{ role: "user", content: prompt }]
+            messages: [{ role: "user", content: prompt }],
+            temperature: 1.2 // High creativity
           })
         })
         .then(async res => {
           if (!res.ok) throw new Error("Groq Error");
           const data = await res.json();
-          return { word: data.choices[0].message.content, source: "Groq (Llama-Instant)" };
+          return { word: data.choices[0].message.content, source: "Groq" };
         })
       );
     }
 
-    // --- LANE 2: MISTRAL DIRECT (Reliable) ---
+    // Lane 2: Mistral (Direct)
     if (process.env.MISTRAL_API_KEY) {
       requests.push(
         fetch("https://api.mistral.ai/v1/chat/completions", {
@@ -70,22 +78,20 @@ export async function handler(event) {
           },
           body: JSON.stringify({
             model: "mistral-small-latest",
-            messages: [{ role: "user", content: prompt }]
+            messages: [{ role: "user", content: prompt }],
+            temperature: 1.0
           })
         })
         .then(async res => {
           if (!res.ok) throw new Error("Mistral Error");
           const data = await res.json();
-          return { word: data.choices[0].message.content, source: "Mistral Direct" };
+          return { word: data.choices[0].message.content, source: "Mistral" };
         })
       );
     }
 
-    // --- LANE 3: OPENROUTER (Variety / Gemini / Phi-3) ---
+    // Lane 3: OpenRouter (Variety)
     if (process.env.OPENROUTER_API_KEY) {
-      // Pick a random model from your list for this specific user
-      const randomModel = OPENROUTER_MODELS[Math.floor(Math.random() * OPENROUTER_MODELS.length)];
-      
       requests.push(
         fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
@@ -93,28 +99,25 @@ export async function handler(event) {
             "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`, 
             "Content-Type": "application/json",
             "HTTP-Referer": "https://wordcloud-app.netlify.app",
-            "X-Title": "Word Cloud Suggest"
+            "X-Title": "Word Cloud"
           },
           body: JSON.stringify({
-            model: randomModel,
-            messages: [{ role: "user", content: prompt }]
+            model: "google/gemini-2.0-flash-exp:free",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 1.1
           })
         })
         .then(async res => {
           if (!res.ok) throw new Error("OpenRouter Error");
           const data = await res.json();
-          return { word: data.choices[0].message.content, source: `OpenRouter (${randomModel})` };
+          return { word: data.choices[0].message.content, source: "OpenRouter" };
         })
       );
     }
 
-    // --- 3. EXECUTE RACE ---
-    if (requests.length === 0) throw new Error("No keys configured");
-
-    // Wait for the FIRST successful response
+    // Execute Race
+    if (requests.length === 0) throw new Error("No keys");
     const winner = await Promise.any(requests);
-
-    // Clean up output
     const cleanWord = winner.word.replace(/[^a-zA-Z]/g, "").trim();
 
     return {
@@ -123,8 +126,7 @@ export async function handler(event) {
     };
 
   } catch (err) {
-    // --- 4. BACKUP (If all 3 APIs fail) ---
-    console.warn("⚠️ All APIs busy/failed. Using Backup.");
+    console.warn("Using Backup:", err.message);
     
     const availableBackups = BACKUP_WORDS.filter(w => !existingWords.includes(w));
     const finalSet = availableBackups.length > 0 ? availableBackups : BACKUP_WORDS;
@@ -132,10 +134,7 @@ export async function handler(event) {
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ 
-        word: backupWord, 
-        usedModel: "Local Backup (All APIs Busy)" 
-      })
+      body: JSON.stringify({ word: backupWord, usedModel: "Local Backup" })
     };
   }
 }
